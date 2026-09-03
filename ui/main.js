@@ -228,6 +228,14 @@ window.addEventListener('keydown', (e) => {
 // ---------------------------------------------------------------------------
 
 listen('state-changed', refresh);
+listen('runtime-progress', (e) => {
+  const p = e.payload;
+  const st = $('status');
+  if (p.done) { refresh(); return; }
+  st.className = 'status starting';
+  const pct = p.total ? Math.round(p.downloaded / p.total * 100) : 0;
+  $('status-text').textContent = `Installation du moteur ${p.kind}… ${pct} %`;
+});
 listen('model-progress', (e) => {
   const p = e.payload;
   if (p.error) { alert('Téléchargement échoué : ' + p.error); delete progress[p.id]; refresh(); return; }
