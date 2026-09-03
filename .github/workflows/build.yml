@@ -47,11 +47,26 @@ jobs:
       APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY || '-' }}
       APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
       APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-      APPLE_ID: ${{ secrets.APPLE_ID }}
-      APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
-      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
     steps:
       - uses: actions/checkout@v4
+
+      # Notarisation seulement si les identifiants Apple existent (variables absentes sinon,
+      # car Tauri considère une variable vide comme présente et tente la notarisation).
+      - name: Identifiants de notarisation
+        if: runner.os == 'macOS'
+        env:
+          S_APPLE_ID: ${{ secrets.APPLE_ID }}
+          S_APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          S_APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          if [ -n "$S_APPLE_ID" ] && [ -n "$S_APPLE_PASSWORD" ] && [ -n "$S_APPLE_TEAM_ID" ]; then
+            echo "APPLE_ID=$S_APPLE_ID" >> "$GITHUB_ENV"
+            echo "APPLE_PASSWORD=$S_APPLE_PASSWORD" >> "$GITHUB_ENV"
+            echo "APPLE_TEAM_ID=$S_APPLE_TEAM_ID" >> "$GITHUB_ENV"
+            echo "Notarisation activée."
+          else
+            echo "Notarisation désactivée (APPLE_ID / APPLE_PASSWORD absents)."
+          fi
 
       - uses: actions/setup-node@v4
         with:
