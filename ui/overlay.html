@@ -98,6 +98,7 @@
       startedAt = Date.now(); time.hidden = false; time.textContent = '0:00';
       timer = setInterval(() => { time.textContent = fmt((Date.now() - startedAt) / 1000); }, 250);
       if (msg.hint === 'direct') { sub.hidden = false; sub.textContent = 'Dictée dans le champ actif'; }
+      if (msg.hint === 'noperm') { sub.hidden = false; sub.textContent = 'Accessibilité non autorisée : le texte sera copié'; }
     } else if (msg.phase === 'transcribing') {
       lead.innerHTML = '<div class="spin"></div>';
       mid.innerHTML = '<div class="label">Transcription…</div>';

@@ -142,6 +142,10 @@ function renderRuntimes() {
 
 function renderSettings() {
   const s = snap.settings;
+  $('perm-section').hidden = !isMac;
+  $('perm-ok').hidden = !snap.accessibility;
+  $('perm-btn').hidden = snap.accessibility;
+  if (snap.accessibility) $('perm-ok').innerHTML = ICON_CHECK + 'Autorisé';
   $('shortcut').textContent = prettyShortcut(s.shortcut);
   $('shortcut-error').hidden = !snap.shortcut_error;
   $('shortcut-error').textContent = snap.shortcut_error || '';
@@ -181,6 +185,8 @@ $('mode').addEventListener('click', (e) => {
 });
 $('autopaste').addEventListener('change', (e) => save({ ...snap.settings, auto_paste: e.target.checked }));
 $('restart').addEventListener('click', () => invoke('restart_engine'));
+$('perm-btn').addEventListener('click', () => { invoke('request_accessibility'); setTimeout(refresh, 1500); });
+window.addEventListener('focus', refresh);
 $('test').addEventListener('click', () => invoke('toggle_recording'));
 $('open-log').addEventListener('click', (e) => { e.preventDefault(); invoke('open_engine_log'); });
 $('open-models').addEventListener('click', (e) => { e.preventDefault(); invoke('open_models_dir'); });

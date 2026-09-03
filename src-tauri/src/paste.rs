@@ -10,6 +10,17 @@ pub fn focused_text_field() -> bool {
     imp::focused_text_field()
 }
 
+/// Vrai si l'app a l'autorisation Accessibilité (toujours vrai hors macOS).
+pub fn accessibility_trusted() -> bool {
+    imp::accessibility_trusted()
+}
+
+/// Demande l'autorisation Accessibilité (affiche la boîte de dialogue système
+/// et inscrit l'app dans la liste des Réglages).
+pub fn request_accessibility() {
+    imp::request_accessibility()
+}
+
 /// Copie `text` dans le presse-papiers (mode « sans champ actif »).
 pub fn copy(text: &str) -> Result<()> {
     let mut cb = arboard::Clipboard::new()?;
@@ -112,9 +123,26 @@ mod imp {
         AXUIElementIsAttributeSettable(elem, key.as_concrete_TypeRef(), &mut s) == kAXErrorSuccess && s != 0
     }
 
+    pub fn accessibility_trusted() -> bool {
+        unsafe { AXIsProcessTrusted() }
+    }
+
+    pub fn request_accessibility() {
+        use accessibility_sys::{kAXTrustedCheckOptionPrompt, AXIsProcessTrustedWithOptions};
+        use core_foundation::boolean::CFBoolean;
+        use core_foundation::dictionary::CFDictionary;
+        use core_foundation::string::CFString;
+        unsafe {
+            let key = CFString::wrap_under_get_rule(kAXTrustedCheckOptionPrompt);
+            let dict = CFDictionary::from_CFType_pairs(&[(key.as_CFType(), CFBoolean::true_value().as_CFType())]);
+            AXIsProcessTrustedWithOptions(dict.as_concrete_TypeRef() as _);
+        }
+    }
+
     pub fn focused_text_field() -> bool {
         unsafe {
             if !AXIsProcessTrusted() {
+                log::info!("focus AX : autorisation Accessibilité absente");
                 return false;
             }
             let system = AXUIElementCreateSystemWide();
@@ -140,8 +168,11 @@ mod imp {
             CFRelease(elem as CFTypeRef);
 
             let text_role = matches!(role.as_str(), "AXTextField" | "AXTextArea" | "AXComboBox" | "AXSearchField");
-            let result = text_role || (has_selection && value_settable) || (role == "AXWebArea" && has_selection);
-            log::debug!("focus AX : role={role} sel={has_selection} settable={value_settable} → {result}");
+            // Chromium/Electron exposent souvent les zones éditables (contenteditable)
+            // comme AXGroup/AXWebArea avec une sélection de texte.
+            let editable_like = has_selection && role != "AXStaticText" && role != "AXMenuItem" && role != "AXButton";
+            let result = text_role || value_settable && has_selection || editable_like;
+            log::info!("focus AX : role={role} sel={has_selection} settable={value_settable} → {result}");
             result
         }
     }
@@ -149,6 +180,11 @@ mod imp {
 
 #[cfg(windows)]
 mod imp {
+    pub fn accessibility_trusted() -> bool {
+        true
+    }
+    pub fn request_accessibility() {}
+
     use windows_sys::Win32::UI::WindowsAndMessaging::{GetForegroundWindow, GetGUIThreadInfo, GetWindowThreadProcessId, GUITHREADINFO};
 
     pub fn focused_text_field() -> bool {
@@ -174,4 +210,8 @@ mod imp {
     pub fn focused_text_field() -> bool {
         false
     }
+    pub fn accessibility_trusted() -> bool {
+        true
+    }
+    pub fn request_accessibility() {}
 }

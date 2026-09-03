@@ -95,6 +95,7 @@ struct Snapshot {
     models: Vec<ModelInfo>,
     engine: EngineStatus,
     runtimes: Vec<RuntimeInfo>,
+    accessibility: bool,
     shortcut_error: Option<String>,
     recording: bool,
     models_dir: String,
@@ -133,6 +134,7 @@ async fn snapshot(state: &AppState) -> Snapshot {
         .collect();
     Snapshot {
         runtimes,
+        accessibility: paste::accessibility_trusted(),
         shortcut_error: state.shortcut_error.lock().unwrap().clone(),
         settings,
         models,
@@ -360,7 +362,9 @@ fn start_recording(app: AppHandle) {
         if state.is_recording() {
             return;
         }
-        let direct = if state.settings().auto_paste {
+        let want_direct = state.settings().auto_paste;
+        let trusted = paste::accessibility_trusted();
+        let direct = if want_direct && trusted {
             let (tx, rx) = tokio::sync::oneshot::channel();
             let _ = app.run_on_main_thread(move || {
                 let _ = tx.send(paste::focused_text_field());
@@ -368,6 +372,13 @@ fn start_recording(app: AppHandle) {
             rx.await.unwrap_or(false)
         } else {
             false
+        };
+        let hint = if direct {
+            "direct"
+        } else if want_direct && !trusted {
+            "noperm"
+        } else {
+            ""
         };
         let app2 = app.clone();
         let started = tauri::async_runtime::spawn_blocking(move || {
@@ -388,7 +399,7 @@ fn start_recording(app: AppHandle) {
                     direct,
                 });
                 *state.session.lock().unwrap() = Some(session.clone());
-                overlay_show(&app, "recording", "", if direct { "direct" } else { "" });
+                overlay_show(&app, "recording", "", hint);
                 notify_changed(&app);
                 let handle = tauri::async_runtime::spawn(live_loop(app.clone(), session, eng));
                 *state.live_task.lock().await = Some(handle);
@@ -701,6 +712,18 @@ fn toggle_recording(app: AppHandle, state: tauri::State<'_, AppState>) {
 }
 
 #[tauri::command]
+fn request_accessibility(app: AppHandle) {
+    let _ = app.run_on_main_thread(|| paste::request_accessibility());
+    #[cfg(target_os = "macos")]
+    {
+        use tauri_plugin_opener::OpenerExt;
+        let _ = app
+            .opener()
+            .open_url("x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility", None::<&str>);
+    }
+}
+
+#[tauri::command]
 fn open_models_dir(app: AppHandle, state: tauri::State<'_, AppState>) -> Result<(), String> {
     use tauri_plugin_opener::OpenerExt;
     let dir = state.models_root();
@@ -822,7 +845,8 @@ pub fn run() {
             restart_engine,
             toggle_recording,
             open_models_dir,
-            open_engine_log
+            open_engine_log,
+            request_accessibility
         ])
         .build(tauri::generate_context!())
         .expect("erreur au démarrage de Murmure");
