@@ -113,7 +113,10 @@ jobs:
           curl -sL -o tmp/llama.tgz "https://github.com/ggml-org/llama.cpp/releases/download/$LLAMA_TAG/$asset"
           tar xzf tmp/llama.tgz -C tmp
           src=$(dirname "$(find tmp -name llama-server -type f | head -1)")
-          cp -R "$src"/. src-tauri/runtimes/llama-cpp/
+          # Seulement le serveur et ses bibliothèques (les autres outils alourdissent et doivent être signés).
+          cp "$src"/llama-server src-tauri/runtimes/llama-cpp/
+          find "$src" -maxdepth 1 \( -name "*.dylib" -o -name "*.so" -o -name "*.so.*" \) -exec cp -R {} src-tauri/runtimes/llama-cpp/ \;
+          cp "$src"/LICENSE* src-tauri/runtimes/llama-cpp/ 2>/dev/null || true
           chmod +x src-tauri/runtimes/llama-cpp/llama-server
           src-tauri/runtimes/llama-cpp/llama-server --version || true
 
@@ -128,6 +131,33 @@ jobs:
           cmake --build tmp/whisper-build --config Release -j 4 --target whisper-server
           mkdir -p src-tauri/runtimes/whisper-cpp
           cp "$(find tmp/whisper-build -name whisper-server -type f | head -1)" src-tauri/runtimes/whisper-cpp/
+
+      - name: Signer les runtimes embarqués (macOS, Developer ID)
+        if: runner.os == 'macOS'
+        env:
+          S_CERT: ${{ secrets.APPLE_CERTIFICATE }}
+          S_CERT_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          S_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+        run: |
+          set -e
+          if [ -z "$S_CERT" ] || [ -z "$S_IDENTITY" ]; then echo "Pas de certificat : runtimes laissés tels quels."; exit 0; fi
+          KC="$RUNNER_TEMP/murmure-runtimes.keychain-db"; KP="$(uuidgen)"
+          security create-keychain -p "$KP" "$KC"
+          security set-keychain-settings -lut 21600 "$KC"
+          security unlock-keychain -p "$KP" "$KC"
+          echo "$S_CERT" | base64 --decode > "$RUNNER_TEMP/cert.p12"
+          security import "$RUNNER_TEMP/cert.p12" -k "$KC" -P "$S_CERT_PASSWORD" -T /usr/bin/codesign -T /usr/bin/security
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KP" "$KC" >/dev/null
+          security list-keychains -d user -s "$KC" $(security list-keychains -d user | tr -d '"')
+          n=0
+          while IFS= read -r f; do
+            if file "$f" | grep -q "Mach-O"; then
+              codesign --force --options runtime --timestamp --sign "$S_IDENTITY" "$f"
+              n=$((n+1))
+            fi
+          done < <(find src-tauri/runtimes -type f)
+          echo "$n binaires signés."
+          codesign -dvv src-tauri/runtimes/llama-cpp/llama-server 2>&1 | grep -E "Authority=Developer|flags"
 
       # ---------------------------------------------------------------- app
       - name: Install JS deps
