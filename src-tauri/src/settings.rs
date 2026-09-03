@@ -22,6 +22,10 @@ pub struct Settings {
     /// Chemins explicites vers les binaires des moteurs, par identifiant de moteur
     /// (`llama-cpp`, `whisper-cpp`, …). Sinon détection automatique.
     pub runtime_paths: BTreeMap<String, String>,
+    /// Onboarding terminé (autorisations, premier modèle).
+    pub onboarding_done: bool,
+    /// Vérifier les mises à jour une fois par jour.
+    pub auto_update: bool,
 }
 
 impl Default for Settings {
@@ -32,6 +36,8 @@ impl Default for Settings {
             mode: ShortcutMode::Toggle,
             auto_paste: true,
             runtime_paths: BTreeMap::new(),
+            onboarding_done: false,
+            auto_update: true,
         }
     }
 }

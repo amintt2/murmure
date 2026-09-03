@@ -6,6 +6,8 @@ let snap = null;
 let progress = {}; // id -> {downloaded,total}
 let filter = 'all';
 let confirmId = null;
+let obStep = 0;
+let pendingUpdate = null;
 
 const isMac = navigator.platform.toLowerCase().includes('mac');
 const ICON_CHECK = '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 10.5l4 4 8-9"/></svg>';
@@ -167,6 +169,35 @@ function renderSettings() {
   $('shortcut-error').textContent = snap.shortcut_error || '';
   for (const b of $('mode').children) b.classList.toggle('on', b.dataset.v === s.mode);
   $('autopaste').checked = s.auto_paste;
+  $('autoupdate').checked = s.auto_update;
+  $('version').textContent = snap.version;
+  renderUpdateBanner();
+}
+
+function renderUpdateBanner() {
+  const b = $('update-banner');
+  if (!pendingUpdate) { b.hidden = true; return; }
+  b.hidden = false;
+  b.innerHTML = `<div class="row-main"><div class="row-title">Murmure ${esc(pendingUpdate.version)} est disponible</div><div class="row-sub wrap" id="update-progress">${esc(pendingUpdate.notes || 'Nouvelle version prête à installer.')}</div></div><button class="btn primary" id="install-update">Installer et redémarrer</button>`;
+  $('install-update').onclick = async () => {
+    $('install-update').disabled = true;
+    $('update-progress').textContent = 'Téléchargement…';
+    try { await invoke('install_update'); } catch (e) { toast(String(e)); $('install-update').disabled = false; }
+  };
+}
+
+async function checkUpdate(manual) {
+  const st = $('update-status');
+  if (manual) { st.textContent = 'Recherche…'; $('check-update').disabled = true; }
+  try {
+    const info = await invoke('check_update');
+    pendingUpdate = info;
+    st.textContent = info ? `Version ${info.version} disponible.` : 'Vous avez la dernière version.';
+  } catch (e) {
+    st.textContent = String(e);
+  }
+  $('check-update').disabled = false;
+  renderUpdateBanner();
 }
 
 // ---------------------------------------------------------------------------
@@ -292,10 +323,99 @@ $('chips').addEventListener('click', (e) => {
 $('back').addEventListener('click', showMain);
 
 // ---------------------------------------------------------------------------
+// Onboarding
+// ---------------------------------------------------------------------------
+
+const ICON_MIC = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="3" width="6" height="12" rx="3"/><path d="M5 11a7 7 0 0014 0M12 18v3M8 21h8"/></svg>';
+const ICON_AX = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="5" r="1.6"/><path d="M4 9h16M12 9v6M12 15l-4 6M12 15l4 6"/></svg>';
+const ICON_BOX = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12M8 11l4 4 4-4M4 17v2a2 2 0 002 2h12a2 2 0 002-2v-2"/></svg>';
+const ICON_KEY = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="6" width="18" height="12" rx="2"/><path d="M7 10h.01M11 10h.01M15 10h.01M7 14h10"/></svg>';
+const ICON_WAVE = '<svg viewBox="0 0 24 24" fill="currentColor"><rect x="3" y="9.5" width="2.2" height="5" rx="1.1"/><rect x="7.4" y="7" width="2.2" height="10" rx="1.1"/><rect x="11.8" y="4" width="2.2" height="16" rx="1.1"/><rect x="16.2" y="7" width="2.2" height="10" rx="1.1"/><rect x="20.6" y="9.5" width="2.2" height="5" rx="1.1"/></svg>';
+
+function obSteps() {
+  const steps = ['welcome'];
+  if (isMac) steps.push('mic', 'ax');
+  steps.push('model', 'shortcut');
+  return steps;
+}
+let obPoll = null;
+
+function renderOnboarding() {
+  const steps = obSteps();
+  const step = steps[Math.min(obStep, steps.length - 1)];
+  const card = $('ob-card');
+  clearInterval(obPoll); obPoll = null;
+  $('ob-dots').innerHTML = steps.map((_, i) => `<i class="${i === obStep ? 'on' : ''}"></i>`).join('');
+  const reco = snap.models.find((m) => m.recommended) || snap.models[0];
+  const active = snap.models.find((m) => m.id === snap.settings.model_id) || reco;
+  const next = () => { obStep = Math.min(obStep + 1, steps.length - 1); renderOnboarding(); };
+
+  if (step === 'welcome') {
+    card.innerHTML = `<div class="ob-icon">${ICON_WAVE}</div><h2 class="ob-title">Bienvenue dans Murmure</h2>
+      <p class="ob-text">Dictez dans n'importe quelle application avec un raccourci clavier. Tout se passe sur cet ordinateur : aucun son, aucun texte n'est envoyé sur Internet.</p>
+      <p class="ob-text">Quelques étapes pour tout mettre en place.</p>
+      <div class="ob-actions"><button class="btn primary" id="ob-next">Commencer</button></div>`;
+    $('ob-next').onclick = next;
+  } else if (step === 'mic') {
+    const ok = snap.mic === 'authorized';
+    card.innerHTML = `<div class="ob-icon ${ok ? 'ok' : ''}">${ICON_MIC}</div><h2 class="ob-title">Accès au micro</h2>
+      <p class="ob-text">Indispensable pour vous entendre. macOS va vous demander l'autorisation ; l'audio ne quitte jamais l'appareil.</p>
+      <div class="ob-status ${ok ? 'ok' : snap.mic === 'denied' ? 'ko' : ''}">${ok ? ICON_CHECK + 'Micro autorisé' : snap.mic === 'denied' ? 'Refusé : ouvrez les Réglages pour l\'autoriser' : 'Pas encore autorisé'}</div>
+      <div class="ob-actions"><button class="link" id="ob-skip">Plus tard</button>${ok ? '' : `<button class="btn" id="ob-mic">${snap.mic === 'denied' ? 'Ouvrir les Réglages' : 'Autoriser le micro'}</button>`}<button class="btn primary" id="ob-next" ${ok ? '' : 'disabled'}>Continuer</button></div>`;
+    $('ob-skip').onclick = next; $('ob-next').onclick = next;
+    if (!ok) $('ob-mic').onclick = () => invoke('request_mic');
+    obPoll = setInterval(async () => { const before = snap.mic; snap = await invoke('get_snapshot'); if (snap.mic !== before) renderOnboarding(); }, 1000);
+  } else if (step === 'ax') {
+    const ok = snap.accessibility;
+    card.innerHTML = `<div class="ob-icon ${ok ? 'ok' : ''}">${ICON_AX}</div><h2 class="ob-title">Accessibilité</h2>
+      <p class="ob-text">Permet à Murmure de repérer le champ texte où vous écrivez et d'y taper la dictée directement. Sans cette autorisation, le texte est simplement copié.</p>
+      <div class="ob-status ${ok ? 'ok' : ''}">${ok ? ICON_CHECK + 'Accessibilité autorisée' : 'Pas encore autorisée'}</div>
+      <div class="ob-actions"><button class="link" id="ob-skip">Plus tard</button>${ok ? '' : '<button class="btn" id="ob-ax">Autoriser</button>'}<button class="btn primary" id="ob-next" ${ok ? '' : 'disabled'}>Continuer</button></div>`;
+    $('ob-skip').onclick = next; $('ob-next').onclick = next;
+    if (!ok) $('ob-ax').onclick = () => invoke('request_accessibility');
+    obPoll = setInterval(async () => { const before = snap.accessibility; snap = await invoke('get_snapshot'); if (snap.accessibility !== before) renderOnboarding(); }, 1000);
+  } else if (step === 'model') {
+    const m = active;
+    card.innerHTML = `<div class="ob-icon ${m.downloaded ? 'ok' : ''}">${ICON_BOX}</div><h2 class="ob-title">Modèle de reconnaissance</h2>
+      <p class="ob-text">Le modèle tourne en local. Celui-ci est recommandé : le plus précis en anglais comme en français.</p>
+      <div class="ob-model">
+        <div class="mc-head"><span class="mc-name">${esc(m.name)}</span>${badges(m)}</div>
+        ${metaHtml(m)}
+        ${metricsHtml(m)}
+        <div class="mc-foot">${statusHtml(m)}<span class="spacer"></span>${m.downloaded || m.downloading ? '' : `<button class="btn primary" data-dl="${m.id}">Télécharger</button>`}</div>
+      </div>
+      <div class="ob-actions"><button class="link" id="ob-other">Choisir un autre modèle</button><button class="btn primary" id="ob-next" ${m.downloaded ? '' : 'disabled'}>Continuer</button></div>`;
+    $('ob-next').onclick = next;
+    $('ob-other').onclick = async () => { await finishOnboarding(false); showPicker(); };
+    card.querySelectorAll('[data-dl]').forEach((b) => b.onclick = () => download(b.dataset.dl));
+  } else if (step === 'shortcut') {
+    card.innerHTML = `<div class="ob-icon">${ICON_KEY}</div><h2 class="ob-title">Raccourci de dictée</h2>
+      <p class="ob-text">Appuyez sur ce raccourci dans n'importe quelle application pour commencer à dicter, et de nouveau pour arrêter. Vous pourrez le changer dans les réglages.</p>
+      <div class="ob-shortcut"><span class="row-sub">Combinaison actuelle</span><span class="keycap">${prettyShortcut(snap.settings.shortcut)}</span></div>
+      <div class="ob-actions"><button class="btn primary" id="ob-done">Terminer</button></div>`;
+    $('ob-done').onclick = () => finishOnboarding(true);
+  }
+}
+
+async function finishOnboarding(toMain) {
+  clearInterval(obPoll); obPoll = null;
+  await save({ ...snap.settings, onboarding_done: true });
+  $('view-onboarding').hidden = true;
+  if (toMain) $('view-main').hidden = false;
+}
+
+// ---------------------------------------------------------------------------
 // Rendu global
 // ---------------------------------------------------------------------------
 
 function render() {
+  if (!snap.settings.onboarding_done) {
+    $('view-main').hidden = true; $('view-picker').hidden = true; $('view-onboarding').hidden = false;
+    renderOnboarding();
+    return;
+  }
+  $('view-onboarding').hidden = true;
+  if ($('view-main').hidden && $('view-picker').hidden) $('view-main').hidden = false;
   renderStatus();
   renderActive();
   renderRuntimes();
@@ -314,6 +434,8 @@ async function save(settings) {
 
 $('mode').addEventListener('click', (e) => { const v = e.target.dataset.v; if (v) save({ ...snap.settings, mode: v }); });
 $('autopaste').addEventListener('change', (e) => save({ ...snap.settings, auto_paste: e.target.checked }));
+$('autoupdate').addEventListener('change', (e) => save({ ...snap.settings, auto_update: e.target.checked }));
+$('check-update').addEventListener('click', () => checkUpdate(true));
 $('restart').addEventListener('click', () => invoke('restart_engine'));
 $('perm-btn').addEventListener('click', () => { invoke('request_accessibility'); setTimeout(refresh, 1500); });
 window.addEventListener('focus', refresh);
@@ -362,6 +484,11 @@ window.addEventListener('keydown', (e) => {
 // ---------------------------------------------------------------------------
 
 listen('state-changed', refresh);
+listen('update-available', (e) => { pendingUpdate = e.payload; $('update-status').textContent = `Version ${e.payload.version} disponible.`; renderUpdateBanner(); });
+listen('update-progress', (e) => {
+  const p = e.payload; const el = $('update-progress');
+  if (el) el.textContent = p.total ? `Téléchargement… ${Math.round(p.downloaded / p.total * 100)} %` : `Téléchargement… ${fmtBytes(p.downloaded)}`;
+});
 listen('runtime-progress', (e) => {
   const p = e.payload;
   if (p.done) { refresh(); return; }

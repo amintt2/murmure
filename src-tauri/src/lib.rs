@@ -1,5 +1,6 @@
 mod audio;
 mod engine;
+mod mic;
 mod models;
 mod paste;
 mod settings;
@@ -17,6 +18,7 @@ use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::{TrayIconBuilder, TrayIconEvent};
 use tauri::{AppHandle, Emitter, Manager, PhysicalPosition, RunEvent, WindowEvent};
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
+use tauri_plugin_updater::UpdaterExt;
 
 /// Une dictée en cours : capture + état de la transcription incrémentale.
 struct Session {
@@ -50,6 +52,7 @@ struct Stat {
 
 pub struct AppState {
     data_dir: PathBuf,
+    pending_update: tokio::sync::Mutex<Option<tauri_plugin_updater::Update>>,
     stats: Mutex<std::collections::HashMap<String, Stat>>,
     settings: Mutex<Settings>,
     engine: tokio::sync::Mutex<Option<Arc<dyn Engine>>>,
@@ -120,6 +123,8 @@ struct Snapshot {
     engine: EngineStatus,
     runtimes: Vec<RuntimeInfo>,
     accessibility: bool,
+    mic: mic::MicStatus,
+    version: &'static str,
     shortcut_error: Option<String>,
     recording: bool,
     models_dir: String,
@@ -161,6 +166,8 @@ async fn snapshot(state: &AppState) -> Snapshot {
     Snapshot {
         runtimes,
         accessibility: paste::accessibility_trusted(),
+        mic: mic::status(),
+        version: env!("CARGO_PKG_VERSION"),
         shortcut_error: state.shortcut_error.lock().unwrap().clone(),
         settings,
         models,
@@ -763,6 +770,92 @@ fn toggle_recording(app: AppHandle, state: tauri::State<'_, AppState>) {
 }
 
 #[tauri::command]
+fn request_mic(app: AppHandle) {
+    let status = mic::status();
+    if status == mic::MicStatus::Undetermined {
+        let _ = app.run_on_main_thread(|| mic::request());
+    } else if status != mic::MicStatus::Authorized {
+        #[cfg(target_os = "macos")]
+        {
+            use tauri_plugin_opener::OpenerExt;
+            let _ = app
+                .opener()
+                .open_url("x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone", None::<&str>);
+        }
+    }
+}
+
+#[derive(Serialize, Clone)]
+struct UpdateInfo {
+    version: String,
+    notes: Option<String>,
+    date: Option<String>,
+}
+
+fn friendly_update_error(e: tauri_plugin_updater::Error) -> String {
+    let msg = e.to_string();
+    if msg.contains("404") || msg.contains("Not Found") {
+        "Aucun manifeste de mise à jour accessible (dépôt GitHub privé ou aucune release publiée).".into()
+    } else {
+        format!("Vérification impossible : {msg}")
+    }
+}
+
+async fn fetch_update(app: &AppHandle) -> Result<Option<UpdateInfo>, String> {
+    let updater = app.updater().map_err(|e| e.to_string())?;
+    match updater.check().await {
+        Ok(Some(u)) => {
+            let info = UpdateInfo {
+                version: u.version.clone(),
+                notes: u.body.clone(),
+                date: u.date.map(|d| d.to_string()),
+            };
+            *app.state::<AppState>().pending_update.lock().await = Some(u);
+            Ok(Some(info))
+        }
+        Ok(None) => Ok(None),
+        Err(e) => Err(friendly_update_error(e)),
+    }
+}
+
+#[tauri::command]
+async fn check_update(app: AppHandle) -> Result<Option<UpdateInfo>, String> {
+    fetch_update(&app).await
+}
+
+#[tauri::command]
+async fn install_update(app: AppHandle, state: tauri::State<'_, AppState>) -> Result<(), String> {
+    let update = state.pending_update.lock().await.take().ok_or("Aucune mise à jour en attente")?;
+    let app2 = app.clone();
+    let mut got: u64 = 0;
+    update
+        .download_and_install(
+            move |chunk, total| {
+                got += chunk as u64;
+                let _ = app2.emit("update-progress", serde_json::json!({ "downloaded": got, "total": total }));
+            },
+            || {},
+        )
+        .await
+        .map_err(|e| format!("Installation impossible : {e}"))?;
+    app.restart();
+}
+
+/// Vérification quotidienne en arrière-plan (si activée).
+async fn update_loop(app: AppHandle) {
+    tokio::time::sleep(Duration::from_secs(25)).await;
+    loop {
+        let enabled = app.state::<AppState>().settings().auto_update;
+        if enabled {
+            if let Ok(Some(info)) = fetch_update(&app).await {
+                let _ = app.emit("update-available", info);
+            }
+        }
+        tokio::time::sleep(Duration::from_secs(24 * 3600)).await;
+    }
+}
+
+#[tauri::command]
 fn request_accessibility(app: AppHandle) {
     let _ = app.run_on_main_thread(|| paste::request_accessibility());
     #[cfg(target_os = "macos")]
@@ -812,6 +905,7 @@ pub fn run() {
 
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(
             tauri_plugin_global_shortcut::Builder::new()
                 .with_handler(|app, _shortcut, event| on_hotkey(app, event.state()))
@@ -831,6 +925,7 @@ pub fn run() {
             }
             app.manage(AppState {
                 data_dir,
+                pending_update: tokio::sync::Mutex::new(None),
                 stats: Mutex::new(stats),
                 settings: Mutex::new(settings.clone()),
                 engine: tokio::sync::Mutex::new(None),
@@ -884,6 +979,7 @@ pub fn run() {
                 .build(app)?;
 
             tauri::async_runtime::spawn(start_engine(app.handle().clone()));
+            tauri::async_runtime::spawn(update_loop(app.handle().clone()));
             Ok(())
         })
         .on_window_event(|window, event| {
@@ -905,7 +1001,10 @@ pub fn run() {
             toggle_recording,
             open_models_dir,
             open_engine_log,
-            request_accessibility
+            request_accessibility,
+            request_mic,
+            check_update,
+            install_update
         ])
         .build(tauri::generate_context!())
         .expect("erreur au démarrage de Murmure");

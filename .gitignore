@@ -2,6 +2,10 @@ node_modules
 src-tauri/target
 src-tauri/gen/schemas
 .DS_Store
-src-tauri/runtimes/*
+src-tauri/runtimes/**
 !src-tauri/runtimes/.keep
+!src-tauri/runtimes/llama-cpp/
+!src-tauri/runtimes/llama-cpp/.keep
+!src-tauri/runtimes/whisper-cpp/
+!src-tauri/runtimes/whisper-cpp/.keep
 - .claude/

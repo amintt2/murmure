@@ -1,6 +1,6 @@
 [package]
 name = "murmure"
-version = "0.1.0"
+version = "0.2.0"
 description = "Dictée locale — transcription hors-ligne par raccourci clavier"
 edition = "2021"
 
@@ -15,6 +15,7 @@ tauri-build = { version = "2", features = [] }
 tauri = { version = "2", features = ["tray-icon", "image-png", "macos-private-api"] }
 tauri-plugin-global-shortcut = "2"
 tauri-plugin-opener = "2"
+tauri-plugin-updater = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 anyhow = "1"
@@ -39,6 +40,9 @@ unicode-segmentation = "1"
 accessibility-sys = "0.2"
 core-foundation = "0.10"
 core-foundation-sys = "0.8"
+objc2 = "0.6"
+block2 = "0.6"
+objc2-av-foundation = { version = "0.3", default-features = false, features = ["std", "block2", "AVCaptureDevice", "AVMediaFormat", "objc2-core-media"] }
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_UI_WindowsAndMessaging"] }

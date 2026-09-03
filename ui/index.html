@@ -7,6 +7,12 @@
 <link rel="stylesheet" href="styles.css">
 </head>
 <body>
+<!-- ============================ Onboarding ============================ -->
+<div class="view onboarding" id="view-onboarding" hidden>
+  <div class="ob-card" id="ob-card"></div>
+  <div class="ob-dots" id="ob-dots"></div>
+</div>
+
 <!-- ============================ Vue réglages ============================ -->
 <div class="view" id="view-main">
   <header class="top">
@@ -27,6 +33,7 @@
   </header>
 
   <main>
+    <div class="card update-banner" id="update-banner" hidden></div>
     <section>
       <h2>Modèle actif</h2>
       <div class="card" id="active-model"></div>
@@ -70,6 +77,26 @@
           </div>
           <span class="check" id="perm-ok" hidden>Autorisé</span>
           <button class="btn" id="perm-btn" type="button">Autoriser</button>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <h2>Mises à jour</h2>
+      <div class="card">
+        <div class="row">
+          <div class="row-main">
+            <div class="row-title">Version <span id="version"></span></div>
+            <div class="row-sub" id="update-status">Les nouvelles versions sont publiées sur GitHub.</div>
+          </div>
+          <button class="btn" id="check-update" type="button">Rechercher</button>
+        </div>
+        <div class="row">
+          <div class="row-main">
+            <div class="row-title">Vérifier automatiquement</div>
+            <div class="row-sub">Une fois par jour, au démarrage de l’app.</div>
+          </div>
+          <label class="switch"><input type="checkbox" id="autoupdate"><span></span></label>
         </div>
       </div>
     </section>

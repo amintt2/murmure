@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "Murmure",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "identifier": "fr.mciut.murmure",
   "build": {
     "frontendDist": "../ui"
@@ -54,10 +54,31 @@
       "icons/icon.ico"
     ],
     "macOS": {
-      "minimumSystemVersion": "12.0"
+      "minimumSystemVersion": "12.0",
+      "dmg": {
+        "background": "dmg/background.png",
+        "windowSize": {
+          "width": 660,
+          "height": 400
+        },
+        "windowPosition": {
+          "x": 300,
+          "y": 200
+        },
+        "appPosition": {
+          "x": 165,
+          "y": 200
+        },
+        "applicationFolderPosition": {
+          "x": 495,
+          "y": 200
+        }
+      },
+      "entitlements": "Entitlements.plist"
     },
     "resources": {
-      "runtimes/**/*": "runtimes/"
+      "runtimes/llama-cpp": "runtimes/llama-cpp",
+      "runtimes/whisper-cpp": "runtimes/whisper-cpp"
     },
     "windows": {
       "nsis": {
@@ -71,6 +92,15 @@
         "type": "downloadBootstrapper"
       }
     },
-    "shortDescription": "Dictée locale hors-ligne"
+    "shortDescription": "Dictée locale hors-ligne",
+    "createUpdaterArtifacts": true
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEMwRDA1Mjc4NzYwRDkwQ0IKUldUTGtBMTJlRkxRd0ZvSTNUR09Cc2c1VWRlRCtKcTZvTU13WkFiQUFFZDRBUHF3QitLL0ZrRGMK",
+      "endpoints": [
+        "https://github.com/amintt2/murmure/releases/latest/download/latest.json"
+      ]
+    }
   }
 }

@@ -27,12 +27,12 @@ jobs:
             llama_asset: llama-${LLAMA_TAG}-bin-win-vulkan-x64.zip
           - name: macos-arm64
             os: macos-latest
-            bundles: dmg
+            bundles: app,dmg
             llama_asset: llama-${LLAMA_TAG}-bin-macos-arm64.tar.gz
             metal: "ON"
           - name: macos-x64
             os: macos-15-intel
-            bundles: dmg
+            bundles: app,dmg
             llama_asset: llama-${LLAMA_TAG}-bin-macos-x64.tar.gz
             metal: "OFF"
           - name: linux-x64
@@ -41,7 +41,15 @@ jobs:
             llama_asset: llama-${LLAMA_TAG}-bin-ubuntu-vulkan-x64.tar.gz
             metal: "OFF"
     env:
-      APPLE_SIGNING_IDENTITY: "-"
+      TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+      TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+      # Signature Apple : Developer ID + notarisation si les secrets existent, sinon ad hoc.
+      APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY || '-' }}
+      APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+      APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+      APPLE_ID: ${{ secrets.APPLE_ID }}
+      APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
     steps:
       - uses: actions/checkout@v4
 
@@ -119,18 +127,23 @@ jobs:
         run: |
           New-Item -ItemType Directory -Force dist | Out-Null
           Copy-Item (Get-ChildItem src-tauri/target/release/bundle/nsis -Filter *.exe | Select-Object -First 1).FullName dist/Murmure-windows-x64-setup.exe
+          $sig = Get-ChildItem src-tauri/target/release/bundle/nsis -Filter *.sig | Select-Object -First 1
+          if ($sig) { Copy-Item $sig.FullName dist/Murmure-windows-x64-setup.exe.sig }
 
       - name: Collecte (macOS)
         if: runner.os == 'macOS'
         run: |
           mkdir -p dist
           cp src-tauri/target/release/bundle/dmg/*.dmg "dist/Murmure-${{ matrix.name }}.dmg"
+          cp src-tauri/target/release/bundle/macos/*.app.tar.gz "dist/Murmure-${{ matrix.name }}.app.tar.gz" || true
+          cp src-tauri/target/release/bundle/macos/*.app.tar.gz.sig "dist/Murmure-${{ matrix.name }}.app.tar.gz.sig" || true
 
       - name: Collecte (Linux)
         if: runner.os == 'Linux'
         run: |
           mkdir -p dist
           cp src-tauri/target/release/bundle/appimage/*.AppImage dist/Murmure-linux-x64.AppImage
+          cp src-tauri/target/release/bundle/appimage/*.AppImage.sig dist/Murmure-linux-x64.AppImage.sig || true
           cp src-tauri/target/release/bundle/deb/*.deb dist/Murmure-linux-x64.deb
 
       - uses: actions/upload-artifact@v4
@@ -156,6 +169,25 @@ jobs:
           ls -la dist
           if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
             tag="${GITHUB_REF#refs/tags/}"
+            version="${tag#v}"
+            base="https://github.com/${GITHUB_REPOSITORY}/releases/download/${tag}"
+            python3 - "$version" "$base" <<'PY'
+          import json, os, sys, datetime
+          version, base = sys.argv[1], sys.argv[2]
+          plats = {
+            "darwin-aarch64": "Murmure-macos-arm64.app.tar.gz",
+            "darwin-x86_64": "Murmure-macos-x64.app.tar.gz",
+            "windows-x86_64": "Murmure-windows-x64-setup.exe",
+            "linux-x86_64": "Murmure-linux-x64.AppImage",
+          }
+          out = {"version": version, "notes": f"Murmure {version}", "pub_date": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"), "platforms": {}}
+          for key, name in plats.items():
+              sig = os.path.join("dist", name + ".sig")
+              if os.path.exists(sig) and os.path.exists(os.path.join("dist", name)):
+                  out["platforms"][key] = {"url": f"{base}/{name}", "signature": open(sig).read().strip()}
+          json.dump(out, open("dist/latest.json", "w"), indent=2)
+          print(json.dumps(out, indent=2))
+          PY
             gh release view "$tag" >/dev/null 2>&1 || gh release create "$tag" --title "Murmure $tag" --generate-notes
             gh release upload "$tag" dist/* --clobber
           else
