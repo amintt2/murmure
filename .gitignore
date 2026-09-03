@@ -1,0 +1,6 @@
+node_modules
+src-tauri/target
+src-tauri/gen/schemas
+.DS_Store
+src-tauri/runtimes/*
+!src-tauri/runtimes/.keep

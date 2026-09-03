@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<style>
+  html, body { margin: 0; background: transparent; overflow: hidden; height: 100%; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI Variable", "Segoe UI", system-ui, sans-serif;
+    display: flex; align-items: flex-end; justify-content: center;
+    -webkit-user-select: none; user-select: none; color: #f5f5f7;
+  }
+  .pill {
+    display: flex; flex-direction: column; gap: 8px;
+    min-width: 240px; max-width: 520px; margin-bottom: 16px;
+    padding: 12px 18px 12px 16px; border-radius: 22px;
+    background: rgba(22, 22, 26, 0.94);
+    border: 1px solid rgba(255,255,255,0.10);
+    box-shadow: 0 10px 30px rgba(0,0,0,0.35), 0 1px 0 rgba(255,255,255,0.05) inset;
+    transform: translateY(14px) scale(0.96); opacity: 0;
+    transition: transform .22s cubic-bezier(.2,.8,.2,1), opacity .18s ease;
+  }
+  .pill.show { transform: none; opacity: 1; }
+
+  .head { display: flex; align-items: center; gap: 14px; min-height: 22px; }
+  .lead { width: 18px; height: 18px; flex: 0 0 18px; display: grid; place-items: center; }
+  .dot { width: 12px; height: 12px; border-radius: 50%; background: #ff453a; animation: pulse 1.4s ease-out infinite; }
+  @keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(255,69,58,.55); } 100% { box-shadow: 0 0 0 9px rgba(255,69,58,0); } }
+  .spin { width: 16px; height: 16px; border-radius: 50%; border: 2px solid rgba(255,255,255,.18); border-top-color: #f5f5f7; animation: spin .8s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .lead svg { width: 18px; height: 18px; }
+
+  .mid { flex: 1; min-width: 0; display: flex; align-items: center; }
+  .label { font-size: 13px; font-weight: 600; letter-spacing: -0.01em; white-space: nowrap; }
+  .bars { display: flex; align-items: center; gap: 3px; height: 22px; }
+  .bars i { display: block; width: 3px; height: 4px; border-radius: 2px; background: #f5f5f7; transition: height 90ms ease; }
+  .time { font-variant-numeric: tabular-nums; font-size: 12.5px; color: rgba(255,255,255,.6); flex: 0 0 auto; }
+
+  .text { font-size: 13.5px; line-height: 1.4; max-height: calc(1.4em * 4); overflow: hidden; display: flex; flex-direction: column-reverse; }
+  .text span.partial { color: rgba(255,255,255,.55); }
+  .text:empty { display: none; }
+  .sub { font-size: 11.5px; color: rgba(255,255,255,.55); white-space: nowrap; }
+  .pill.error .label { color: #ffd60a; white-space: normal; }
+</style>
+</head>
+<body>
+  <div class="pill" id="pill">
+    <div class="head">
+      <div class="lead" id="lead"></div>
+      <div class="mid" id="mid"></div>
+      <div class="time" id="time" hidden>0:00</div>
+    </div>
+    <div class="text" id="text"></div>
+    <div class="sub" id="sub" hidden></div>
+  </div>
+<script>
+  const { listen } = window.__TAURI__.event;
+  const pill = document.getElementById('pill');
+  const lead = document.getElementById('lead');
+  const mid = document.getElementById('mid');
+  const time = document.getElementById('time');
+  const text = document.getElementById('text');
+  const sub = document.getElementById('sub');
+
+  const ICON_CHECK = '<svg viewBox="0 0 20 20" fill="none" stroke="#30d158" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 10.5l4 4 8-9"/></svg>';
+  const ICON_WARN = '<svg viewBox="0 0 20 20" fill="none" stroke="#ffd60a" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 3l8 14H2z"/><path d="M10 8v4M10 15h.01"/></svg>';
+
+  const N = 9;
+  let levels = new Array(N).fill(0);
+  let bars = null;
+  let startedAt = 0, timer = null;
+  let phase = 'idle';
+
+  function fmt(s) { const m = Math.floor(s / 60), r = Math.floor(s % 60); return `${m}:${String(r).padStart(2, '0')}`; }
+  function stopTimer() { clearInterval(timer); timer = null; time.hidden = true; }
+
+  function setLive(committed, partial) {
+    text.innerHTML = '';
+    if (!committed && !partial) return;
+    // column-reverse : le dernier enfant est visuellement en haut ; on met tout dans un seul bloc.
+    const block = document.createElement('div');
+    if (committed) block.appendChild(document.createTextNode(committed + (partial ? ' ' : '')));
+    if (partial) { const p = document.createElement('span'); p.className = 'partial'; p.textContent = partial; block.appendChild(p); }
+    text.appendChild(block);
+  }
+
+  function render(msg) {
+    phase = msg.phase;
+    pill.classList.remove('show', 'error');
+    void pill.offsetWidth;
+    lead.innerHTML = ''; mid.innerHTML = ''; bars = null; stopTimer();
+    text.innerHTML = ''; sub.hidden = true; sub.textContent = '';
+
+    if (msg.phase === 'recording') {
+      lead.innerHTML = '<div class="dot"></div>';
+      const wrap = document.createElement('div'); wrap.className = 'bars';
+      for (let i = 0; i < N; i++) wrap.appendChild(document.createElement('i'));
+      mid.appendChild(wrap); bars = wrap.children; levels.fill(0);
+      startedAt = Date.now(); time.hidden = false; time.textContent = '0:00';
+      timer = setInterval(() => { time.textContent = fmt((Date.now() - startedAt) / 1000); }, 250);
+      if (msg.hint === 'direct') { sub.hidden = false; sub.textContent = 'Dictée dans le champ actif'; }
+    } else if (msg.phase === 'transcribing') {
+      lead.innerHTML = '<div class="spin"></div>';
+      mid.innerHTML = '<div class="label">Transcription…</div>';
+    } else if (msg.phase === 'done') {
+      lead.innerHTML = ICON_CHECK;
+      mid.innerHTML = '<div class="label">Terminé</div>';
+      setLive(msg.text, '');
+      sub.hidden = false; sub.textContent = msg.hint;
+    } else {
+      pill.classList.add('error');
+      lead.innerHTML = ICON_WARN;
+      const l = document.createElement('div'); l.className = 'label'; l.textContent = msg.text || 'Erreur';
+      mid.appendChild(l);
+    }
+    requestAnimationFrame(() => pill.classList.add('show'));
+  }
+
+  listen('overlay', (e) => render(e.payload));
+  listen('live', (e) => {
+    if (phase !== 'recording' && phase !== 'transcribing') return;
+    setLive(e.payload.committed, e.payload.partial);
+  });
+  listen('level', (e) => {
+    if (!bars) return;
+    levels.push(Math.max(0, Math.min(1, e.payload))); levels.shift();
+    const midI = Math.floor(N / 2);
+    for (let i = 0; i < N; i++) {
+      const d = Math.abs(i - midI);
+      const v = levels[N - 1 - d] ?? 0;
+      bars[i].style.height = (4 + v * 18 * (1 - d * 0.08)) + 'px';
+    }
+  });
+</script>
+</body>
+</html>

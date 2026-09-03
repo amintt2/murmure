@@ -1,0 +1,49 @@
+[package]
+name = "murmure"
+version = "0.1.0"
+description = "Dictée locale — transcription hors-ligne par raccourci clavier"
+edition = "2021"
+
+[lib]
+name = "murmure_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["tray-icon", "image-png", "macos-private-api"] }
+tauri-plugin-global-shortcut = "2"
+tauri-plugin-opener = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+anyhow = "1"
+async-trait = "0.1"
+tokio = { version = "1", features = ["full"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "stream", "multipart", "rustls-tls"] }
+futures-util = "0.3"
+cpal = "0.16"
+hound = "3.5"
+arboard = "3"
+enigo = "0.5"
+base64 = "0.22"
+regex = "1"
+log = "0.4"
+env_logger = "0.11"
+tokio-tungstenite = "0.30"
+tar = "0.4"
+bzip2 = "0.6"
+unicode-segmentation = "1"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+accessibility-sys = "0.2"
+core-foundation = "0.10"
+core-foundation-sys = "0.8"
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_UI_WindowsAndMessaging"] }
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1

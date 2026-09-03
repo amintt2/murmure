@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Murmure</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<header class="top">
+  <div class="brand">
+    <svg class="mark" viewBox="0 0 44 44" aria-hidden="true">
+      <rect x="7.5"  y="17.2" width="3.7" height="9.6" rx="1.85"/>
+      <rect x="14.1" y="13.2" width="3.7" height="17.6" rx="1.85"/>
+      <rect x="20.7" y="8.8"  width="3.7" height="26.4" rx="1.85"/>
+      <rect x="27.3" y="13.2" width="3.7" height="17.6" rx="1.85"/>
+      <rect x="33.9" y="17.2" width="3.7" height="9.6" rx="1.85"/>
+    </svg>
+    <div>
+      <h1>Murmure</h1>
+      <p class="tagline">Dictée locale, hors-ligne</p>
+    </div>
+  </div>
+  <div class="status" id="status"><span class="sdot"></span><span id="status-text">…</span></div>
+</header>
+
+<main>
+  <section>
+    <h2>Modèle</h2>
+    <div class="card list" id="models"></div>
+  </section>
+
+  <section>
+    <h2>Raccourci</h2>
+    <div class="card">
+      <div class="row">
+        <div class="row-main">
+          <div class="row-title">Combinaison</div>
+          <div class="row-sub" id="shortcut-help">Cliquez puis appuyez sur les touches</div>
+          <div class="row-sub err" id="shortcut-error" hidden></div>
+        </div>
+        <button class="keycap" id="shortcut" type="button"></button>
+      </div>
+      <div class="row">
+        <div class="row-main">
+          <div class="row-title">Fonctionnement</div>
+        </div>
+        <div class="seg" id="mode">
+          <button type="button" data-v="toggle">Appuyer pour démarrer / arrêter</button>
+          <button type="button" data-v="hold">Maintenir</button>
+        </div>
+      </div>
+      <div class="row">
+        <div class="row-main">
+          <div class="row-title">Dicter dans le champ actif</div>
+          <div class="row-sub wrap" id="paste-help">Si un champ texte a le focus, le texte y est inséré au fil de la parole. Sinon il est affiché et copié.</div>
+        </div>
+        <label class="switch"><input type="checkbox" id="autopaste"><span></span></label>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Moteurs</h2>
+    <div class="card list" id="runtimes"></div>
+    <div class="links-out">
+      <a href="#" id="open-log">Journal du moteur actif</a>
+      <a href="#" id="open-models">Dossier des modèles</a>
+      <button class="btn small" id="restart" type="button">Redémarrer le moteur</button>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <button class="btn primary" id="test" type="button">Tester la dictée</button>
+  <span class="foot-note" id="foot-note"></span>
+</footer>
+
+<script src="main.js"></script>
+</body>
+</html>
