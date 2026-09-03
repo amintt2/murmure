@@ -7,89 +7,141 @@
 <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-<header class="top">
-  <div class="brand">
-    <svg class="mark" viewBox="0 0 44 44" aria-hidden="true">
-      <rect x="7.5"  y="17.2" width="3.7" height="9.6" rx="1.85"/>
-      <rect x="14.1" y="13.2" width="3.7" height="17.6" rx="1.85"/>
-      <rect x="20.7" y="8.8"  width="3.7" height="26.4" rx="1.85"/>
-      <rect x="27.3" y="13.2" width="3.7" height="17.6" rx="1.85"/>
-      <rect x="33.9" y="17.2" width="3.7" height="9.6" rx="1.85"/>
-    </svg>
-    <div>
-      <h1>Murmure</h1>
-      <p class="tagline">Dictée locale, hors-ligne</p>
+<!-- ============================ Vue réglages ============================ -->
+<div class="view" id="view-main">
+  <header class="top">
+    <div class="brand">
+      <svg class="mark" viewBox="0 0 44 44" aria-hidden="true">
+        <rect x="7.5"  y="17.2" width="3.7" height="9.6" rx="1.85"/>
+        <rect x="14.1" y="13.2" width="3.7" height="17.6" rx="1.85"/>
+        <rect x="20.7" y="8.8"  width="3.7" height="26.4" rx="1.85"/>
+        <rect x="27.3" y="13.2" width="3.7" height="17.6" rx="1.85"/>
+        <rect x="33.9" y="17.2" width="3.7" height="9.6" rx="1.85"/>
+      </svg>
+      <div>
+        <h1>Murmure</h1>
+        <p class="tagline">Dictée locale, hors-ligne</p>
+      </div>
     </div>
+    <div class="status" id="status"><span class="sdot"></span><span id="status-text">…</span></div>
+  </header>
+
+  <main>
+    <section>
+      <h2>Modèle actif</h2>
+      <div class="card" id="active-model"></div>
+    </section>
+
+    <section>
+      <h2>Raccourci</h2>
+      <div class="card">
+        <div class="row">
+          <div class="row-main">
+            <div class="row-title">Combinaison</div>
+            <div class="row-sub" id="shortcut-help">Cliquez puis appuyez sur les touches</div>
+            <div class="row-sub err" id="shortcut-error" hidden></div>
+          </div>
+          <button class="keycap" id="shortcut" type="button"></button>
+        </div>
+        <div class="row">
+          <div class="row-main"><div class="row-title">Fonctionnement</div></div>
+          <div class="seg" id="mode">
+            <button type="button" data-v="toggle">Appuyer pour démarrer / arrêter</button>
+            <button type="button" data-v="hold">Maintenir</button>
+          </div>
+        </div>
+        <div class="row">
+          <div class="row-main">
+            <div class="row-title">Dicter dans le champ actif</div>
+            <div class="row-sub wrap">Si un champ texte a le focus, le texte y est tapé au fil de la parole. Sinon il est affiché et copié.</div>
+          </div>
+          <label class="switch"><input type="checkbox" id="autopaste"><span></span></label>
+        </div>
+      </div>
+    </section>
+
+    <section id="perm-section" hidden>
+      <h2>Autorisations</h2>
+      <div class="card">
+        <div class="row">
+          <div class="row-main">
+            <div class="row-title">Accessibilité</div>
+            <div class="row-sub wrap">Nécessaire pour détecter le champ texte actif et y taper. Réglages → Confidentialité et sécurité → Accessibilité.</div>
+          </div>
+          <span class="check" id="perm-ok" hidden>Autorisé</span>
+          <button class="btn" id="perm-btn" type="button">Autoriser</button>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <h2>Moteurs</h2>
+      <div class="card list" id="runtimes"></div>
+      <div class="links-out">
+        <a href="#" id="open-log">Journal du moteur actif</a>
+        <a href="#" id="open-models">Dossier des modèles</a>
+        <button class="btn small" id="restart" type="button">Redémarrer le moteur</button>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <button class="btn primary" id="test" type="button">Tester la dictée</button>
+    <span class="foot-note" id="foot-note"></span>
+  </footer>
+</div>
+
+<!-- ============================ Vue modèles ============================ -->
+<div class="view" id="view-picker" hidden>
+  <header class="top picker-top">
+    <button class="back" id="back" type="button">
+      <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.5 4l-6 6 6 6"/></svg>
+      Réglages
+    </button>
+    <h1 class="picker-title">Modèles</h1>
+    <button class="btn small" id="add-toggle" type="button">Ajouter</button>
+  </header>
+
+  <div class="chips" id="chips">
+    <button class="chip on" data-f="all" type="button">Tous</button>
+    <button class="chip" data-f="fr" type="button">Bons en français</button>
+    <button class="chip" data-f="fast" type="button">Rapides</button>
+    <button class="chip" data-f="light" type="button">Légers</button>
+    <button class="chip" data-f="downloaded" type="button">Téléchargés</button>
   </div>
-  <div class="status" id="status"><span class="sdot"></span><span id="status-text">…</span></div>
-</header>
+  <p class="legend">WER = taux d'erreur sur les mots (Open ASR Leaderboard, Hugging Face). Plus bas = mieux. Anglais : moyenne de 8 jeux de test. Français : FLEURS.</p>
 
-<main>
-  <section>
-    <h2>Modèle</h2>
-    <div class="card list" id="models"></div>
-  </section>
-
-  <section>
-    <h2>Raccourci</h2>
-    <div class="card">
-      <div class="row">
-        <div class="row-main">
-          <div class="row-title">Combinaison</div>
-          <div class="row-sub" id="shortcut-help">Cliquez puis appuyez sur les touches</div>
-          <div class="row-sub err" id="shortcut-error" hidden></div>
-        </div>
-        <button class="keycap" id="shortcut" type="button"></button>
-      </div>
-      <div class="row">
-        <div class="row-main">
-          <div class="row-title">Fonctionnement</div>
-        </div>
-        <div class="seg" id="mode">
-          <button type="button" data-v="toggle">Appuyer pour démarrer / arrêter</button>
-          <button type="button" data-v="hold">Maintenir</button>
-        </div>
-      </div>
-      <div class="row">
-        <div class="row-main">
-          <div class="row-title">Dicter dans le champ actif</div>
-          <div class="row-sub wrap" id="paste-help">Si un champ texte a le focus, le texte y est inséré au fil de la parole. Sinon il est affiché et copié.</div>
-        </div>
-        <label class="switch"><input type="checkbox" id="autopaste"><span></span></label>
+  <main class="picker-main">
+    <div class="card add-form" id="add-form" hidden>
+      <div class="form-title">Ajouter un modèle</div>
+      <label>Nom<input class="input" id="cm-name" placeholder="Mon modèle"></label>
+      <label>Moteur
+        <select class="input" id="cm-engine">
+          <option value="llama-cpp">llama.cpp — GGUF (modèles audio type Qwen3-ASR, Voxtral)</option>
+          <option value="whisper-cpp">whisper.cpp — ggml .bin (Whisper)</option>
+          <option value="sherpa-onnx">sherpa-onnx — archive .tar.bz2 (Parakeet, Canary…)</option>
+        </select>
+      </label>
+      <label>Fichier principal<input class="input" id="cm-main" placeholder="https://huggingface.co/…/model.gguf ou /chemin/local"></label>
+      <label id="cm-mmproj-row">Fichier mmproj (encodeur audio)<input class="input" id="cm-mmproj" placeholder="https://huggingface.co/…/mmproj-….gguf"></label>
+      <label id="cm-prompt-row">Consigne texte (optionnel)<input class="input" id="cm-prompt" placeholder="Transcribe this audio verbatim…"></label>
+      <label id="cm-output-row">Format de sortie
+        <select class="input" id="cm-output">
+          <option value="plain">Texte brut</option>
+          <option value="qwen3-asr">Qwen3-ASR (language X&lt;asr_text&gt;…)</option>
+        </select>
+      </label>
+      <label>Langues (info)<input class="input" id="cm-langs" placeholder="FR, EN…"></label>
+      <div class="form-actions">
+        <button class="btn" id="cm-cancel" type="button">Annuler</button>
+        <button class="btn primary" id="cm-save" type="button">Ajouter</button>
       </div>
     </div>
-  </section>
+    <div id="picker-list"></div>
+  </main>
+</div>
 
-  <section id="perm-section" hidden>
-    <h2>Autorisations</h2>
-    <div class="card">
-      <div class="row">
-        <div class="row-main">
-          <div class="row-title">Accessibilité</div>
-          <div class="row-sub wrap" id="perm-help">Nécessaire pour détecter le champ texte actif et y taper. Réglages → Confidentialité et sécurité → Accessibilité.</div>
-        </div>
-        <span class="check" id="perm-ok" hidden>Autorisé</span>
-        <button class="btn" id="perm-btn" type="button">Autoriser</button>
-      </div>
-    </div>
-  </section>
-
-  <section>
-    <h2>Moteurs</h2>
-    <div class="card list" id="runtimes"></div>
-    <div class="links-out">
-      <a href="#" id="open-log">Journal du moteur actif</a>
-      <a href="#" id="open-models">Dossier des modèles</a>
-      <button class="btn small" id="restart" type="button">Redémarrer le moteur</button>
-    </div>
-  </section>
-</main>
-
-<footer>
-  <button class="btn primary" id="test" type="button">Tester la dictée</button>
-  <span class="foot-note" id="foot-note"></span>
-</footer>
-
+<div class="toast" id="toast" hidden></div>
 <script src="main.js"></script>
 </body>
 </html>

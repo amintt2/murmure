@@ -1,8 +1,9 @@
-name: Builds de test (Windows + macOS)
+name: Builds multi-plateformes
 
 on:
   push:
     branches: [main]
+    tags: ['v*']
   workflow_dispatch:
 
 permissions:
@@ -13,70 +14,32 @@ env:
   WHISPER_TAG: b4938
 
 jobs:
-  windows:
-    runs-on: windows-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-
-      - uses: dtolnay/rust-toolchain@stable
-
-      - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: src-tauri
-
-      - name: Runtimes (llama.cpp Vulkan, whisper.cpp)
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = "Stop"
-          New-Item -ItemType Directory -Force src-tauri/runtimes/llama-cpp, src-tauri/runtimes/whisper-cpp, tmp | Out-Null
-
-          # llama.cpp : build Vulkan = AMD, NVIDIA, Intel, tout GPU avec pilote Vulkan (repli CPU sinon)
-          Invoke-WebRequest "https://github.com/ggml-org/llama.cpp/releases/download/$env:LLAMA_TAG/llama-$env:LLAMA_TAG-bin-win-vulkan-x64.zip" -OutFile tmp/llama.zip
-          Expand-Archive tmp/llama.zip tmp/llama -Force
-          $exe = Get-ChildItem tmp/llama -Recurse -Filter llama-server.exe | Select-Object -First 1
-          Copy-Item "$($exe.DirectoryName)\*" src-tauri/runtimes/llama-cpp -Recurse -Force
-
-          # whisper.cpp : build CPU x64 (fonctionne partout)
-          Invoke-WebRequest "https://github.com/ggml-org/whisper.cpp/releases/download/$env:WHISPER_TAG/whisper-bin-x64.zip" -OutFile tmp/whisper.zip
-          Expand-Archive tmp/whisper.zip tmp/whisper -Force
-          $wexe = Get-ChildItem tmp/whisper -Recurse -Filter whisper-server.exe | Select-Object -First 1
-          Copy-Item "$($wexe.DirectoryName)\*" src-tauri/runtimes/whisper-cpp -Recurse -Force
-
-          Get-ChildItem src-tauri/runtimes -Recurse -File | Select-Object FullName, Length
-
-      - name: Install JS deps
-        run: npm install
-
-      - name: Build installer
-        run: npx tauri build --bundles nsis
-
-      - name: Rename installer
-        shell: pwsh
-        run: |
-          $exe = Get-ChildItem src-tauri/target/release/bundle/nsis -Filter *.exe | Select-Object -First 1
-          Copy-Item $exe.FullName "Murmure-windows-x64-setup.exe"
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: Murmure-windows-x64-setup
-          path: Murmure-windows-x64-setup.exe
-
-      - name: Publish rolling test release
-        if: github.ref == 'refs/heads/main'
-        shell: pwsh
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          gh release view win-test 2>$null
-          if ($LASTEXITCODE -ne 0) { gh release create win-test --prerelease --title "Murmure — builds de test" --notes "Builds automatiques depuis main. Windows 10/11 x64 (GPU via Vulkan : AMD, NVIDIA, Intel ; repli CPU) et macOS Apple Silicon (.dmg, non notarisé : clic droit → Ouvrir au premier lancement)." }
-          gh release upload win-test Murmure-windows-x64-setup.exe --clobber
-
-  macos:
-    runs-on: macos-latest
+  build:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: windows-x64
+            os: windows-latest
+            bundles: nsis
+            llama_asset: llama-${LLAMA_TAG}-bin-win-vulkan-x64.zip
+          - name: macos-arm64
+            os: macos-latest
+            bundles: dmg
+            llama_asset: llama-${LLAMA_TAG}-bin-macos-arm64.tar.gz
+            metal: "ON"
+          - name: macos-x64
+            os: macos-15-intel
+            bundles: dmg
+            llama_asset: llama-${LLAMA_TAG}-bin-macos-x64.tar.gz
+            metal: "OFF"
+          - name: linux-x64
+            os: ubuntu-22.04
+            bundles: appimage,deb
+            llama_asset: llama-${LLAMA_TAG}-bin-ubuntu-vulkan-x64.tar.gz
+            metal: "OFF"
     env:
       APPLE_SIGNING_IDENTITY: "-"
     steps:
@@ -91,47 +54,112 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: src-tauri
+          key: ${{ matrix.name }}
 
-      - name: Runtime llama.cpp (release Apple Silicon)
+      - name: Dépendances Linux
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev patchelf \
+            libasound2-dev libxdo-dev libssl-dev build-essential cmake curl file libfuse2
+
+      # ---------------------------------------------------------------- runtimes
+      - name: Runtimes (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          New-Item -ItemType Directory -Force src-tauri/runtimes/llama-cpp, src-tauri/runtimes/whisper-cpp, tmp | Out-Null
+          # llama.cpp Vulkan : AMD, NVIDIA, Intel, tout GPU avec pilote Vulkan (repli CPU sinon)
+          Invoke-WebRequest "https://github.com/ggml-org/llama.cpp/releases/download/$env:LLAMA_TAG/llama-$env:LLAMA_TAG-bin-win-vulkan-x64.zip" -OutFile tmp/llama.zip
+          Expand-Archive tmp/llama.zip tmp/llama -Force
+          $exe = Get-ChildItem tmp/llama -Recurse -Filter llama-server.exe | Select-Object -First 1
+          Copy-Item "$($exe.DirectoryName)\*" src-tauri/runtimes/llama-cpp -Recurse -Force
+          # whisper.cpp CPU x64
+          Invoke-WebRequest "https://github.com/ggml-org/whisper.cpp/releases/download/$env:WHISPER_TAG/whisper-bin-x64.zip" -OutFile tmp/whisper.zip
+          Expand-Archive tmp/whisper.zip tmp/whisper -Force
+          $wexe = Get-ChildItem tmp/whisper -Recurse -Filter whisper-server.exe | Select-Object -First 1
+          Copy-Item "$($wexe.DirectoryName)\*" src-tauri/runtimes/whisper-cpp -Recurse -Force
+
+      - name: Runtime llama.cpp (Unix)
+        if: runner.os != 'Windows'
         run: |
           set -e
           mkdir -p src-tauri/runtimes/llama-cpp tmp
-          curl -sL -o tmp/llama.tgz "https://github.com/ggml-org/llama.cpp/releases/download/$LLAMA_TAG/llama-$LLAMA_TAG-bin-macos-arm64.tar.gz"
+          asset="${{ matrix.llama_asset }}"; asset="${asset//\$\{LLAMA_TAG\}/$LLAMA_TAG}"
+          curl -sL -o tmp/llama.tgz "https://github.com/ggml-org/llama.cpp/releases/download/$LLAMA_TAG/$asset"
           tar xzf tmp/llama.tgz -C tmp
           src=$(dirname "$(find tmp -name llama-server -type f | head -1)")
           cp -R "$src"/. src-tauri/runtimes/llama-cpp/
           chmod +x src-tauri/runtimes/llama-cpp/llama-server
-          src-tauri/runtimes/llama-cpp/llama-server --version
+          src-tauri/runtimes/llama-cpp/llama-server --version || true
 
-      - name: Runtime whisper.cpp (compilé, statique, Metal embarqué)
+      - name: Runtime whisper.cpp (compilé, statique)
+        if: runner.os != 'Windows'
         run: |
           set -e
           git clone --depth 1 --branch "$WHISPER_TAG" https://github.com/ggml-org/whisper.cpp tmp/whisper.cpp
           cmake -S tmp/whisper.cpp -B tmp/whisper-build -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=OFF \
-            -DGGML_METAL=ON -DGGML_METAL_EMBED_LIBRARY=ON -DWHISPER_BUILD_TESTS=OFF -DWHISPER_BUILD_EXAMPLES=ON -DWHISPER_BUILD_SERVER=ON
+            -DGGML_METAL=${{ matrix.metal }} -DGGML_METAL_EMBED_LIBRARY=${{ matrix.metal }} \
+            -DWHISPER_BUILD_TESTS=OFF -DWHISPER_BUILD_EXAMPLES=ON -DWHISPER_BUILD_SERVER=ON
           cmake --build tmp/whisper-build --config Release -j 4 --target whisper-server
           mkdir -p src-tauri/runtimes/whisper-cpp
           cp "$(find tmp/whisper-build -name whisper-server -type f | head -1)" src-tauri/runtimes/whisper-cpp/
-          src-tauri/runtimes/whisper-cpp/whisper-server --help | head -3 || true
 
+      # ---------------------------------------------------------------- app
       - name: Install JS deps
         run: npm install
 
-      - name: Build .dmg
-        run: npx tauri build --bundles dmg
+      - name: Build
+        run: npx tauri build --bundles ${{ matrix.bundles }}
 
-      - name: Rename
-        run: cp src-tauri/target/release/bundle/dmg/*.dmg Murmure-macos-arm64.dmg
+      - name: Collecte (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force dist | Out-Null
+          Copy-Item (Get-ChildItem src-tauri/target/release/bundle/nsis -Filter *.exe | Select-Object -First 1).FullName dist/Murmure-windows-x64-setup.exe
+
+      - name: Collecte (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          mkdir -p dist
+          cp src-tauri/target/release/bundle/dmg/*.dmg "dist/Murmure-${{ matrix.name }}.dmg"
+
+      - name: Collecte (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          mkdir -p dist
+          cp src-tauri/target/release/bundle/appimage/*.AppImage dist/Murmure-linux-x64.AppImage
+          cp src-tauri/target/release/bundle/deb/*.deb dist/Murmure-linux-x64.deb
 
       - uses: actions/upload-artifact@v4
         with:
-          name: Murmure-macos-arm64
-          path: Murmure-macos-arm64.dmg
+          name: ${{ matrix.name }}
+          path: dist/*
 
-      - name: Publish rolling test release
-        if: github.ref == 'refs/heads/main'
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    if: always() && needs.build.result != 'cancelled'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Publier
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release view win-test >/dev/null 2>&1 || gh release create win-test --prerelease --title "Murmure — builds de test" --notes "Builds automatiques depuis main."
-          gh release upload win-test Murmure-macos-arm64.dmg --clobber
+          set -e
+          ls -la dist
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            tag="${GITHUB_REF#refs/tags/}"
+            gh release view "$tag" >/dev/null 2>&1 || gh release create "$tag" --title "Murmure $tag" --generate-notes
+            gh release upload "$tag" dist/* --clobber
+          else
+            gh release view nightly >/dev/null 2>&1 || gh release create nightly --prerelease --title "Murmure — build de test (nightly)" \
+              --notes "Dernier build automatique de la branche main. Windows 10/11 x64 (GPU via Vulkan : AMD, NVIDIA, Intel ; repli CPU), macOS Apple Silicon et Intel (.dmg non notarisé : clic droit → Ouvrir au premier lancement), Linux x64 (AppImage, .deb)."
+            gh release upload nightly dist/* --clobber
+          fi

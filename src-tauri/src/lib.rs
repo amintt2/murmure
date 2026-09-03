@@ -40,8 +40,17 @@ struct LiveState {
     typed_partial: String,
 }
 
+/// Vitesse mesurée localement par modèle (secondes d'audio / secondes de calcul).
+#[derive(Default, Clone, Serialize, serde::Deserialize)]
+struct Stat {
+    audio_s: f32,
+    proc_s: f32,
+    n: u32,
+}
+
 pub struct AppState {
     data_dir: PathBuf,
+    stats: Mutex<std::collections::HashMap<String, Stat>>,
     settings: Mutex<Settings>,
     engine: tokio::sync::Mutex<Option<Arc<dyn Engine>>>,
     session: Mutex<Option<Arc<Session>>>,
@@ -63,6 +72,19 @@ impl AppState {
     fn settings(&self) -> Settings {
         self.settings.lock().unwrap().clone()
     }
+    fn stats_path(&self) -> PathBuf {
+        self.data_dir.join("stats.json")
+    }
+    fn record_stat(&self, model_id: &str, audio_s: f32, proc_s: f32) {
+        let mut all = self.stats.lock().unwrap();
+        let e = all.entry(model_id.to_string()).or_default();
+        e.audio_s += audio_s;
+        e.proc_s += proc_s;
+        e.n += 1;
+        if let Ok(json) = serde_json::to_vec_pretty(&*all) {
+            let _ = std::fs::write(self.stats_path(), json);
+        }
+    }
     fn is_recording(&self) -> bool {
         self.session.lock().unwrap().is_some()
     }
@@ -77,6 +99,8 @@ struct ModelInfo {
     spec: ModelSpec,
     downloaded: bool,
     downloading: bool,
+    /// ×temps réel mesuré sur cette machine (None tant qu'aucune dictée).
+    local_speed: Option<f32>,
 }
 
 #[derive(Serialize, Clone)]
@@ -106,6 +130,7 @@ async fn snapshot(state: &AppState) -> Snapshot {
     let settings = state.settings();
     let downloading = state.downloading.lock().unwrap().clone();
     let root = state.models_root();
+    let stats = state.stats.lock().unwrap().clone();
     let models = models::catalog()
         .into_iter()
         .map(|spec| {
@@ -113,6 +138,7 @@ async fn snapshot(state: &AppState) -> Snapshot {
             ModelInfo {
                 downloaded: models::is_downloaded(&spec, &dir),
                 downloading: downloading.contains(&spec.id),
+                local_speed: stats.get(&spec.id).filter(|s| s.proc_s > 0.2 && s.n > 0).map(|s| s.audio_s / s.proc_s),
                 spec,
             }
         })
@@ -584,6 +610,7 @@ fn stop_and_transcribe(app: AppHandle) {
             match eng.transcribe_stream(&wav, &on_partial).await {
                 Ok(t) => {
                     log::info!("fin de segment ({} ms, {:?})", t.duration_ms, t.language);
+                    state.record_stat(&state.settings().model_id, tail_s, t.duration_ms as f32 / 1000.0);
                     tail_text = t.text;
                 }
                 Err(e) => return overlay_error(&app, &format!("Transcription : {e}")),
@@ -698,6 +725,30 @@ async fn delete_model(app: AppHandle, state: tauri::State<'_, AppState>, id: Str
 }
 
 #[tauri::command]
+async fn add_custom_model(app: AppHandle, state: tauri::State<'_, AppState>, input: models::CustomModelInput) -> Result<Snapshot, String> {
+    models::add_custom(&state.data_dir, input).map_err(|e| e.to_string())?;
+    notify_changed(&app);
+    Ok(snapshot(&state).await)
+}
+
+#[tauri::command]
+async fn remove_custom_model(app: AppHandle, state: tauri::State<'_, AppState>, id: String) -> Result<Snapshot, String> {
+    let spec = models::find(&id).ok_or("modèle inconnu")?;
+    if !spec.custom {
+        return Err("Ce modèle fait partie du catalogue intégré.".into());
+    }
+    if state.settings().model_id == id {
+        if let Some(e) = state.engine.lock().await.take() {
+            e.stop().await;
+        }
+    }
+    let _ = models::delete(&spec, &models::model_dir(&state.models_root(), &id));
+    models::remove_custom(&state.data_dir, &id).map_err(|e| e.to_string())?;
+    notify_changed(&app);
+    Ok(snapshot(&state).await)
+}
+
+#[tauri::command]
 async fn restart_engine(app: AppHandle) {
     tauri::async_runtime::spawn(start_engine(app));
 }
@@ -770,11 +821,17 @@ pub fn run() {
             let data_dir = app.path().app_data_dir()?;
             std::fs::create_dir_all(&data_dir)?;
             let settings = Settings::load(&data_dir.join("settings.json"));
+            models::load_custom(&data_dir);
+            let stats: std::collections::HashMap<String, Stat> = std::fs::read(data_dir.join("stats.json"))
+                .ok()
+                .and_then(|b| serde_json::from_slice(&b).ok())
+                .unwrap_or_default();
             for k in engine::EngineKind::all() {
                 engine::sidecar::kill_stale(k, k.binary());
             }
             app.manage(AppState {
                 data_dir,
+                stats: Mutex::new(stats),
                 settings: Mutex::new(settings.clone()),
                 engine: tokio::sync::Mutex::new(None),
                 session: Mutex::new(None),
@@ -842,6 +899,8 @@ pub fn run() {
             save_settings,
             download_model,
             delete_model,
+            add_custom_model,
+            remove_custom_model,
             restart_engine,
             toggle_recording,
             open_models_dir,
