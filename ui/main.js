@@ -70,15 +70,15 @@ function metric(label, wer, sub) {
 function speedMetric(label, value, unit, max) {
   if (value == null) return `<div class="metric na"><div class="metric-head"><span>${label}</span><b>${unit === 'local' ? 'après une dictée' : 'non mesuré'}</b></div><div class="bar"></div></div>`;
   const s = Math.max(0.04, Math.min(1, Math.log10(value) / Math.log10(max)));
-  return `<div class="metric"><div class="metric-head"><span>${label}</span><b>× ${value >= 100 ? Math.round(value) : fmtNum(value)} temps réel</b></div><div class="bar"><i class="g" style="width:${Math.round(s * 100)}%"></i></div></div>`;
+  return `<div class="metric"><div class="metric-head"><span>${label}</span><b>×${value >= 100 ? Math.round(value) : fmtNum(value)} temps réel</b></div><div class="bar"><i class="g" style="width:${Math.round(s * 100)}%"></i></div></div>`;
 }
 function metricsHtml(m) {
   const b = m.bench || {};
   return `<div class="metrics">
     ${metric('Anglais', b.wer_en)}
     ${metric('Français', b.wer_fr, 'FLEURS')}
-    ${speedMetric('Vitesse réf. (GPU A100)', b.rtfx, 'ref', 7000)}
-    ${speedMetric('Vitesse sur cette machine', m.local_speed, 'local', 60)}
+    ${speedMetric('Vitesse réf.', b.rtfx, 'ref', 7000)}
+    ${speedMetric('Vitesse ici', m.local_speed, 'local', 60)}
   </div>`;
 }
 function badges(m) {

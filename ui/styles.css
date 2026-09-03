@@ -99,7 +99,8 @@ h2 { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacin
 .metrics { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 16px; }
 .metric { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
 .metric-head { display: flex; justify-content: space-between; font-size: 11.5px; color: var(--muted); }
-.metric-head b { color: var(--text); font-weight: 600; font-variant-numeric: tabular-nums; }
+.metric-head b { color: var(--text); font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.metric-head span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .bar { height: 5px; border-radius: 3px; background: var(--bar-bg); overflow: hidden; }
 .bar i { display: block; height: 100%; border-radius: 3px; }
 .bar i.g { background: var(--ok); } .bar i.a { background: var(--warn); } .bar i.r { background: var(--danger); }
